@@ -35,7 +35,7 @@
 #include "cmdlf.h"    // lf_read
 #include "util_posix.h"
 #include "lfdemod.h"
-#include "wiegand_formats.h" 
+#include "wiegand_formats.h"
 
 #ifndef BITS
 # define BITS 96
@@ -47,9 +47,7 @@ static int usage_lf_hid_watch(void) {
     PrintAndLogEx(NORMAL, "Enables HID compatible reader mode printing details.");
     PrintAndLogEx(NORMAL, "By default, values are printed and logged until the button is pressed or another USB command is issued.");
     PrintAndLogEx(NORMAL, "");
-    PrintAndLogEx(NORMAL, "Usage:  lf hid watch [h]");
-    PrintAndLogEx(NORMAL, "Options:");
-    PrintAndLogEx(NORMAL, "      h :  This help");
+    PrintAndLogEx(NORMAL, "Usage:  lf hid watch");
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(NORMAL, "Examples:");
     PrintAndLogEx(NORMAL, "       lf hid watch");
@@ -125,7 +123,7 @@ static int sendTry(uint8_t format_idx, wiegand_card_t *card, uint32_t delay, boo
     }
 
     if (verbose)
-        PrintAndLogEx(INFO, "Trying FC: %u; CN: %u;  Issue level: %u; OEM: %u", card->FacilityCode, card->CardNumber, card->IssueLevel, card->OEM);
+        PrintAndLogEx(INFO, "Trying FC: %u; CN: %"PRIu64";  Issue level: %u; OEM: %u", card->FacilityCode, card->CardNumber, card->IssueLevel, card->OEM);
 
     lf_hidsim_t payload;
     payload.hi2 = packed.Top;
@@ -135,12 +133,12 @@ static int sendTry(uint8_t format_idx, wiegand_card_t *card, uint32_t delay, boo
     clearCommandBuffer();
 
     SendCommandNG(CMD_LF_HID_SIMULATE, (uint8_t *)&payload,  sizeof(payload));
-/*
-    PacketResponseNG resp;
-    WaitForResponse(CMD_LF_HID_SIMULATE, &resp);
-    if (resp.status == PM3_EOPABORTED)
-        return resp.status;
-*/
+    /*
+        PacketResponseNG resp;
+        WaitForResponse(CMD_LF_HID_SIMULATE, &resp);
+        if (resp.status == PM3_EOPABORTED)
+            return resp.status;
+    */
     msleep(delay);
     return sendPing();
 }
@@ -179,7 +177,7 @@ static int CmdHIDDemod(const char *Cmd) {
         else if (idx == -4)
             PrintAndLogEx(DEBUG, "DEBUG: Error - HID preamble not found");
         else if (idx == -5)
-            PrintAndLogEx(DEBUG, "DEBUG: Error - HID error in Manchester data, size %d", size);
+            PrintAndLogEx(DEBUG, "DEBUG: Error - HID error in Manchester data, size %zu", size);
         else
             PrintAndLogEx(DEBUG, "DEBUG: Error - HID error demoding fsk %d", idx);
 
@@ -241,14 +239,14 @@ static int CmdHIDDemod(const char *Cmd) {
             fc = ((hi & 0xF) << 12) | (lo >> 20);
         }
         if (fmtLen == 32 && (lo & 0x40000000)) { //if 32 bit and Kastle bit set
-            PrintAndLogEx(SUCCESS, "HID Prox TAG (Kastle format) ID: %08x (%u) - Format Len: 32bit - CC: %u - FC: %u - Card: %u", lo, (lo >> 1) & 0xFFFF, cc, fc, cardnum);
+            PrintAndLogEx(SUCCESS, "HID Prox TAG (Kastle format) ID: %x%08x (%u) - Format Len: 32bit - CC: %u - FC: %u - Card: %u", hi, lo, (lo >> 1) & 0xFFFF, cc, fc, cardnum);
         } else {
             PrintAndLogEx(SUCCESS, "HID Prox TAG ID: %x%08x (%u) - Format Len: %ubit - OEM: %03u - FC: %u - Card: %u",
                           hi, lo, cardnum, fmtLen, oem, fc, cardnum);
         }
     }
 
-    PrintAndLogEx(DEBUG, "DEBUG: HID idx: %d, Len: %d, Printing Demod Buffer:", idx, size);
+    PrintAndLogEx(DEBUG, "DEBUG: HID idx: %d, Len: %zu, Printing Demod Buffer:", idx, size);
     if (g_debugMode)
         printDemodBuff();
 
@@ -264,11 +262,10 @@ static int CmdHIDRead(const char *Cmd) {
 // this read loops on device side.
 // uses the demod in lfops.c
 static int CmdHIDWatch(const char *Cmd) {
-
     uint8_t ctmp = tolower(param_getchar(Cmd, 0));
-    if ( strlen(Cmd) == 0 || ctmp == 'h') return usage_lf_hid_watch();
+    if (ctmp == 'h') return usage_lf_hid_watch();
     clearCommandBuffer();
-    SendCommandMIX(CMD_LF_HID_DEMOD, 0, 0, 0, NULL, 0);
+    SendCommandNG(CMD_LF_HID_DEMOD, NULL, 0);
     return PM3_SUCCESS;
 }
 
@@ -446,7 +443,7 @@ static int CmdHIDBrute(const char *Cmd) {
         if (data.CardNumber > 1) {
             data.CardNumber--;
             if (sendTry(format_idx, &data, delay, verbose) != PM3_SUCCESS) return PM3_ESOFT;
-       }
+        }
     }
     return PM3_SUCCESS;
 }
@@ -455,7 +452,7 @@ static command_t CommandTable[] = {
     {"help",    CmdHelp,        AlwaysAvailable, "this help"},
     {"demod",   CmdHIDDemod,    AlwaysAvailable, "demodulate HID Prox tag from the GraphBuffer"},
     {"read",    CmdHIDRead,     IfPm3Lf,         "attempt to read and extract tag data"},
-    {"clone",   CmdHIDClone,    IfPm3Lf,         "clone HID to T55x7"},
+    {"clone",   CmdHIDClone,    IfPm3Lf,         "clone HID tag to T55x7"},
     {"sim",     CmdHIDSim,      IfPm3Lf,         "simulate HID tag"},
     {"brute",   CmdHIDBrute,    IfPm3Lf,         "bruteforce card number against reader"},
     {"watch",   CmdHIDWatch,    IfPm3Lf,         "continuously watch for cards.  Reader mode"},

@@ -133,8 +133,8 @@ ISO 7816-4 Basic interindustry commands. For command APDU's.
 #define ICLASS_CMD_READ_OR_IDENTIFY 0xC
 #define ICLASS_CMD_ACT              0xE
 
-#define ICLASS_CREDIT(x)            (((x) & 0x5) == 1)
-#define ICLASS_DEBIT(x)             (((x) & 0x5) == 0)
+#define ICLASS_CREDIT(x)            (((x) & 0x10) == 0x10)
+#define ICLASS_DEBIT(x)             !(ICLASS_CREDIT(x))
 
 
 #define ISO14443A_CMD_REQA          0x26
@@ -205,6 +205,11 @@ ISO 7816-4 Basic interindustry commands. For command APDU's.
 #define MAGIC_WIPE                  0x40
 #define MAGIC_SINGLE                (MAGIC_WUPC | MAGIC_HALT | MAGIC_INIT | MAGIC_OFF) //0x1E
 
+// by CMD_HF_MIFARE_CIDENT
+#define MAGIC_GEN_1A 1
+#define MAGIC_GEN_1B 2
+#define MAGIC_GEN_2  4
+#define MAGIC_GEN_UNFUSED 5
 /**
 06 00 = INITIATE
 0E xx = SELECT ID (xx = Chip-ID)

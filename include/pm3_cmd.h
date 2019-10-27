@@ -118,6 +118,8 @@ typedef struct {
     bool averaging;
     int divisor;
     int trigger_threshold;
+    uint32_t samples_to_skip;
+    bool verbose;
 } PACKED sample_config;
 /*
 typedef struct {
@@ -197,6 +199,12 @@ typedef struct {
     uint8_t flags;
 } PACKED t55xx_write_block_t;
 
+typedef struct {
+    uint8_t data[128];
+    uint8_t bitlen;
+    uint32_t time;
+} PACKED t55xx_test_block_t;
+
 // For CMD_LF_HID_SIMULATE (FSK)
 typedef struct {
     uint32_t hi2;
@@ -252,7 +260,7 @@ typedef struct {
 
 // For the bootloader
 #define CMD_DEVICE_INFO                                                   0x0000
-#define CMD_SETUP_WRITE                                                   0x0001
+//#define CMD_SETUP_WRITE                                                   0x0001
 #define CMD_FINISH_WRITE                                                  0x0003
 #define CMD_HARDWARE_RESET                                                0x0004
 #define CMD_START_FLASH                                                   0x0005
@@ -279,6 +287,7 @@ typedef struct {
 #define CMD_SET_DBGMODE                                                   0x0114
 #define CMD_STANDALONE                                                    0x0115
 #define CMD_WTX                                                           0x0116
+#define CMD_TIA                                                           0x0117
 
 // RDV40, Flash memory operations
 #define CMD_FLASHMEM_WRITE                                                0x0121
@@ -372,8 +381,10 @@ typedef struct {
 #define CMD_LF_T55XX_WAKEUP                                               0x0224
 #define CMD_LF_COTAG_READ                                                 0x0225
 #define CMD_LF_T55XX_SET_CONFIG                                           0x0226
+#define CMD_LF_SAMPLING_GET_CONFIG                                        0x0227
 
 #define CMD_LF_T55XX_CHK_PWDS                                             0x0230
+#define CMD_LF_T55XX_DANGERRAW                                            0x0231
 
 /* CMD_SET_ADC_MUX: ext1 is 0 for lopkd, 1 for loraw, 2 for hipkd, 3 for hiraw */
 
@@ -442,6 +453,7 @@ typedef struct {
 // For measurements of the antenna tuning
 #define CMD_MEASURE_ANTENNA_TUNING                                        0x0400
 #define CMD_MEASURE_ANTENNA_TUNING_HF                                     0x0401
+#define CMD_MEASURE_ANTENNA_TUNING_LF                                     0x0402
 #define CMD_LISTEN_READER_FIELD                                           0x0420
 #define CMD_HF_DROPFIELD                                                  0x0430
 
@@ -478,6 +490,7 @@ typedef struct {
 #define CMD_HF_MIFARE_CHKKEYS_FAST                                        0x0625
 
 #define CMD_HF_MIFARE_SNIFF                                               0x0630
+#define CMD_HF_MIFARE_MFKEY                                               0x0631
 //ultralightC
 #define CMD_HF_MIFAREUC_AUTH                                              0x0724
 //0x0725 and 0x0726 no longer used
@@ -576,6 +589,11 @@ typedef struct {
 // Quit program                         client:     reserved, order to quit the program
 #define PM3_EFATAL            -99
 
+// LF
+#define LF_FREQ2DIV(f) ((int)(((12000.0 + (f)/2.0)/(f))-1))
+#define LF_DIVISOR_125 LF_FREQ2DIV(125)
+#define LF_DIVISOR_134 LF_FREQ2DIV(134.2)
+#define LF_DIV2FREQ(d) (12000.0/((d)+1))
 
 // Receiving from USART need more than 30ms as we used on USB
 // else we get errors about partial packet reception

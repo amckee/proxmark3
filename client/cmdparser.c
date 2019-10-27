@@ -154,8 +154,11 @@ void CmdsHelp(const command_t Commands[]) {
     if (Commands[0].Name == NULL) return;
     int i = 0;
     while (Commands[i].Name) {
-        if (Commands[i].IsAvailable())
+        if (Commands[i].IsAvailable()) {
+            g_printAndLog = PRINTANDLOG_PRINT;
             PrintAndLogEx(NORMAL, _GREEN_("%-16s")" %s", Commands[i].Name, Commands[i].Help);
+            g_printAndLog = PRINTANDLOG_PRINT | PRINTANDLOG_LOG;
+        }
         ++i;
     }
 }

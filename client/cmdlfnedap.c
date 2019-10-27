@@ -9,6 +9,19 @@
 
 #include "cmdlfnedap.h"
 
+#include <string.h>
+
+#include <ctype.h>
+#include <stdlib.h>
+#include "cmdparser.h"    // command_t
+#include "comms.h"
+#include "crc16.h"
+#include "cmdlft55xx.h" // verifywrite
+#include "ui.h"
+#include "cmddata.h"
+#include "cmdlf.h"
+#include "lfdemod.h"
+
 #define FIXED_71    0x71
 #define FIXED_40    0x40
 #define UNKNOWN_A   0x00
@@ -28,7 +41,7 @@ static int usage_lf_nedap_gen(void) {
     PrintAndLogEx(NORMAL, "      l               : optional - long (128), default to short (64)");
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(NORMAL, "Examples:");
-    PrintAndLogEx(NORMAL, "       lf nedap generate s 1 c 123 i 112233");
+    PrintAndLogEx(NORMAL, "       lf nedap generate s 1 c 123 i 12345");
     return PM3_SUCCESS;
 }
 
@@ -45,7 +58,7 @@ static int usage_lf_nedap_clone(void) {
 //  PrintAndLogEx(NORMAL, "      Q5              : optional - clone to Q5 (T5555) instead of T55x7 chip");
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(NORMAL, "Examples:");
-    PrintAndLogEx(NORMAL, "       lf nedap clone s 1 c 123 i 112233");
+    PrintAndLogEx(NORMAL, "       lf nedap clone s 1 c 123 i 12345");
     return PM3_SUCCESS;
 }
 
@@ -111,7 +124,7 @@ static int CmdLFNedapDemod(const char *Cmd) {
 
     // sanity checks
     if ((size != 128) && (size != 64)) {
-        PrintAndLogEx(DEBUG, "DEBUG: Error - NEDAP: Size not correct: %d", size);
+        PrintAndLogEx(DEBUG, "DEBUG: Error - NEDAP: Size not correct: %zu", size);
         return PM3_ESOFT;
     }
 
@@ -413,7 +426,7 @@ static int CmdLfNedapGen(const char *Cmd) {
     return PM3_SUCCESS;
 }
 
-int CmdLFNedapClone(const char *Cmd) {
+static int CmdLFNedapClone(const char *Cmd) {
     uint8_t max;
     uint32_t blocks[5] = {0};
 
@@ -431,7 +444,7 @@ int CmdLFNedapClone(const char *Cmd) {
         return PM3_ESOFT;
     }
 
-    CmdPrintDemodBuff("x");
+    //CmdPrintDemodBuff("x");
 
 // What we had before in commented code:
     //NEDAP - compat mode, ASK/DIphase, data rate 64, 4 data blocks
@@ -455,47 +468,14 @@ int CmdLFNedapClone(const char *Cmd) {
     PrintAndLogEx(SUCCESS, "Preparing to clone NEDAP to T55x7");
     print_blocks(blocks, max);
 
-    uint8_t res = 0;
-    PacketResponseNG resp;
-
-    // fast push mode
-    conn.block_after_ACK = true;
-    for (uint8_t i = 0; i < max; i++) {
-        if (i == max - 1) {
-            // Disable fast mode on last packet
-            conn.block_after_ACK = false;
-        }
-        clearCommandBuffer();
-        t55xx_write_block_t ng;
-        ng.data = blocks[i];
-        ng.pwd = 0;
-        ng.blockno = i;
-        ng.flags = 0;
-
-        SendCommandNG(CMD_LF_T55XX_WRITEBL, (uint8_t *)&ng, sizeof(ng));
-        if (!WaitForResponseTimeout(CMD_LF_T55XX_WRITEBL, &resp, T55XX_WRITE_TIMEOUT)) {
-            PrintAndLogEx(ERR, "Error occurred, device did not respond during write operation.");
-            return PM3_ETIMEOUT;
-        }
-
-        if (i == 0) {
-            SetConfigWithBlock0(blocks[0]);
-            if (t55xxAquireAndCompareBlock0(false, 0, blocks[0], false))
-                continue;
-        }
-
-        if (t55xxVerifyWrite(i, 0, false, false, 0, 0xFF, blocks[i]) == false)
-            res++;
-    }
-
-    if (res == 0)
-        PrintAndLogEx(SUCCESS, "Success writing to tag");
-    else {
-        PrintAndLogEx(NORMAL, "");
+    int res = clone_t55xx_tag(blocks, max);
+    if (res == PM3_SUCCESS) {
         PrintAndLogEx(INFO, "The block 0 was changed (eXtended) which can be hard to detect.");
         PrintAndLogEx(INFO,  " Configure it manually " _YELLOW_("`lf t55xx config b 64 d BI i 1 o 32`"));
+    } else {
+        PrintAndLogEx(NORMAL, "");
     }
-    return PM3_SUCCESS;
+    return res;
 }
 
 static int CmdLFNedapSim(const char *Cmd) {

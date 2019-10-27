@@ -20,6 +20,7 @@
 #define T55x7_PAGE1 0x01
 #define T55x7_PWD 0x00000010
 #define REGULAR_READ_MODE_BLOCK 0xFF
+#define T55x7_BLOCK_COUNT 12
 
 // config blocks
 #define T55X7_DEFAULT_CONFIG_BLOCK      0x000880E8  // ASK, compat mode, data rate 32, manchester, STT, 7 data blocks
@@ -37,11 +38,11 @@
 #define T55X7_INDALA_224_CONFIG_BLOCK   0x000810E0  // emulate indala 224 bit - compat mode, PSK1, psk carrier FC * 2, data rate 32, maxblock 7
 #define T55X7_GUARDPROXII_CONFIG_BLOCK  0x00150060  // bitrate 64pcb, Direct modulation, Biphase, 3 data blocks
 #define T55X7_VIKING_CONFIG_BLOCK       0x00088040  // ASK, compat mode, data rate 32, Manchester, 2 data blocks
-#define T55X7_NORALYS_CONFIG_BLOCK      0x00088C6A  // ASK, compat mode,   (NORALYS - KCP3000)
+#define T55X7_NORALYS_CONFIG_BLOCK      0x00088C6A  // ASK, compat mode,   (NORALYS - KCP3000), 3 data blocks
 #define T55X7_IOPROX_CONFIG_BLOCK       0x00147040  // ioprox - FSK2a, data rate 64, 2 data blocks
-#define T55X7_PRESCO_CONFIG_BLOCK       0x00088088  // ASK, data rate 32, Manchester, 5 data blocks, STT
-#define T55X7_NEDAP_64_CONFIG_BLOCK     0x907f0042  // BiPhase,  data rate 64, 3 data blocks
-#define T55X7_NEDAP_128_CONFIG_BLOCK    0x907f0082  // BiPhase,  data rate 64, 5 data blocks
+#define T55X7_PRESCO_CONFIG_BLOCK       0x00088088  // ASK, data rate 32, Manchester, 4 data blocks, STT
+#define T55X7_NEDAP_64_CONFIG_BLOCK     0x907f0042  // BiPhase,  data rate 64, 2 data blocks
+#define T55X7_NEDAP_128_CONFIG_BLOCK    0x907f0082  // BiPhase,  data rate 64, 4 data blocks
 
 #define T55X7_bin 0b0010
 
@@ -118,6 +119,7 @@ typedef struct {
     bool Q5;
     bool ST;
     bool usepwd;
+    uint32_t pwd;
     enum {
         refFixedBit = 0x00,
         refLongLeading = 0x01,
@@ -125,6 +127,11 @@ typedef struct {
         ref1of4 = 0x03,
     } downlink_mode;
 } t55xx_conf_block_t;
+
+typedef struct {
+    uint32_t blockdata;
+    bool valid;
+}  t55xx_memory_item_t ;
 
 t55xx_conf_block_t Get_t55xx_Config(void);
 void Set_t55xx_Config(t55xx_conf_block_t conf);
@@ -141,9 +148,9 @@ char *GetQ5ModulationStr(uint32_t id);
 char *GetModulationStr(uint32_t id, bool xmode);
 char *GetModelStrFromCID(uint32_t cid);
 char *GetSelectedModulationStr(uint8_t id);
-char *GetDownlinkModeStr(uint8_t dlmode);
+char *GetDownlinkModeStr(uint8_t downlink_mode);
 void printT5xxHeader(uint8_t page);
-void printT55xxBlock(uint8_t blockNum);
+void printT55xxBlock(uint8_t blockNum, bool page1);
 int  printConfiguration(t55xx_conf_block_t b);
 
 bool t55xxAquireAndCompareBlock0(bool usepwd, uint32_t password, uint32_t known_block0, bool verbose);
@@ -163,10 +170,11 @@ bool testKnownConfigBlock(uint32_t block0);
 bool tryDetectP1(bool getData);
 bool test(uint8_t mode, uint8_t *offset, int *fndBitRate, uint8_t clk, bool *Q5);
 int  special(const char *Cmd);
-bool AquireData(uint8_t page, uint8_t block, bool pwdmode, uint32_t password, uint8_t downlink_mode);
+bool AcquireData(uint8_t page, uint8_t block, bool pwdmode, uint32_t password, uint8_t downlink_mode);
 uint8_t  tryOnePassword(uint32_t password, uint8_t downlink_mode);
 
 void printT55x7Trace(t55x7_tracedata_t data, uint8_t repeat);
 void printT5555Trace(t5555_tracedata_t data, uint8_t repeat);
 
+int clone_t55xx_tag(uint32_t *blockdata, uint8_t numblocks);
 #endif

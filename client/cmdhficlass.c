@@ -150,7 +150,7 @@ static int usage_hf_iclass_writeblock(void) {
     return PM3_SUCCESS;
 }
 static int usage_hf_iclass_readblock(void) {
-    PrintAndLogEx(NORMAL, "Usage:  hf iclass readblk b <block> k <key> [c|e|r|v]\n");
+    PrintAndLogEx(NORMAL, "Usage:  hf iclass rdbl b <block> k <key> [c|e|r|v]\n");
     PrintAndLogEx(NORMAL, "Options:");
     PrintAndLogEx(NORMAL, "  b <block> : The block number as 2 hex symbols");
     PrintAndLogEx(NORMAL, "  k <key>   : Access Key as 16 hex symbols or 1 hex to select key from memory");
@@ -159,9 +159,9 @@ static int usage_hf_iclass_readblock(void) {
     PrintAndLogEx(NORMAL, "  r         : raw, no computations applied to key");
     PrintAndLogEx(NORMAL, "  v         : verbose output");
     PrintAndLogEx(NORMAL, "Examples:");
-    PrintAndLogEx(NORMAL, "        hf iclass readblk b 06 k 0011223344556677");
-    PrintAndLogEx(NORMAL, "        hf iclass readblk b 1B k 0011223344556677 c");
-    PrintAndLogEx(NORMAL, "        hf iclass readblk b 0A k 0");
+    PrintAndLogEx(NORMAL, "        hf iclass rdbl b 06 k 0011223344556677");
+    PrintAndLogEx(NORMAL, "        hf iclass rdbl b 1B k 0011223344556677 c");
+    PrintAndLogEx(NORMAL, "        hf iclass rdbl b 0A k 0");
     return PM3_SUCCESS;
 }
 static int usage_hf_iclass_readtagfile() {
@@ -757,6 +757,7 @@ static int CmdHFiClassELoad(const char *Cmd) {
         }
         default:
             PrintAndLogEx(ERR, "No dictionary loaded");
+            free(dump);
             return PM3_ESOFT;
     }
 
@@ -869,6 +870,7 @@ static int CmdHFiClassDecrypt(const char *Cmd) {
             return PM3_EINVARG;
 
         memcpy(key, keyptr, sizeof(key));
+        free(keyptr);
     }
 
     // tripledes
@@ -977,6 +979,7 @@ static int CmdHFiClassEncryptBlk(const char *Cmd) {
             return PM3_EINVARG;
 
         memcpy(key, keyptr, sizeof(key));
+        free(keyptr);
     }
 
     iClassEncryptBlkData(blk_data, key);
@@ -1332,7 +1335,7 @@ static int CmdHFiClassReader_Dump(const char *Cmd) {
     }
 
     // save the dump to .bin file
-    PrintAndLogEx(SUCCESS, "saving dump file - %d blocks read", gotBytes / 8);
+    PrintAndLogEx(SUCCESS, "saving dump file - %zu blocks read", gotBytes / 8);
     saveFile(filename, ".bin", tag_data, gotBytes);
     saveFileEML(filename, tag_data, gotBytes, 8);
     saveFileJSON(filename, jsfIclass, tag_data, gotBytes);
@@ -1836,7 +1839,7 @@ static int CmdHFiClass_loclass(const char *Cmd) {
         int errors = testCipherUtils();
         errors += testMAC();
         errors += doKeyTests(0);
-        errors += testElite(opt2=='l');
+        errors += testElite(opt2 == 'l');
         if (errors) PrintAndLogEx(ERR, "There were errors!!!");
         return PM3_ESOFT;
     }
@@ -2081,7 +2084,7 @@ static int loadKeys(char *filename) {
     size_t bytes_read = fread(dump, 1, fsize, f);
     fclose(f);
     if (bytes_read > ICLASS_KEYS_MAX * 8) {
-        PrintAndLogEx(WARNING, "File is too long to load - bytes: %u", bytes_read);
+        PrintAndLogEx(WARNING, "File is too long to load - bytes: %zu", bytes_read);
         free(dump);
         return 0;
     }
@@ -2327,7 +2330,7 @@ static int CmdHFiClassCheckKeys(const char *Cmd) {
     uint8_t found_offset = 0;
     uint32_t key_offset = 0;
     // main keychunk loop
-    for (uint32_t key_offset = 0; key_offset < keycount; key_offset += chunksize) {
+    for (key_offset = 0; key_offset < keycount; key_offset += chunksize) {
 
         uint64_t t2 = msclock();
         uint8_t timeout = 0;
@@ -2484,7 +2487,7 @@ static int CmdHFiClassLookUp(const char *Cmd) {
             case 'u':
                 param_gethex_ex(Cmd, cmdp + 1, CSN, &len);
                 if (len >> 1 != sizeof(CSN)) {
-                    PrintAndLogEx(WARNING, "Wrong CSN length, expected %d got [%d]", sizeof(CSN), len >> 1);
+                    PrintAndLogEx(WARNING, "Wrong CSN length, expected %zu got [%d]", sizeof(CSN), len >> 1);
                     errors = true;
                 }
                 cmdp += 2;
@@ -2492,7 +2495,7 @@ static int CmdHFiClassLookUp(const char *Cmd) {
             case 'm':
                 param_gethex_ex(Cmd, cmdp + 1, MACS, &len);
                 if (len >> 1 != sizeof(MACS)) {
-                    PrintAndLogEx(WARNING, "Wrong MACS length, expected %d got [%d]  ", sizeof(MACS), len >> 1);
+                    PrintAndLogEx(WARNING, "Wrong MACS length, expected %zu got [%d]  ", sizeof(MACS), len >> 1);
                     errors = true;
                 } else {
                     memcpy(MAC_TAG, MACS + 4, 4);
@@ -2502,7 +2505,7 @@ static int CmdHFiClassLookUp(const char *Cmd) {
             case 'p':
                 param_gethex_ex(Cmd, cmdp + 1, EPURSE, &len);
                 if (len >> 1 != sizeof(EPURSE)) {
-                    PrintAndLogEx(WARNING, "Wrong EPURSE length, expected %d got [%d]  ", sizeof(EPURSE), len >> 1);
+                    PrintAndLogEx(WARNING, "Wrong EPURSE length, expected %zu got [%d]  ", sizeof(EPURSE), len >> 1);
                     errors = true;
                 }
                 cmdp += 2;
@@ -2652,7 +2655,7 @@ void PrintPreCalc(iclass_prekey_t *list, int itemcnt) {
     for (int i = 0; i < itemcnt; i++) {
 
         if (i < 10) {
-            PrintAndLogEx(NORMAL, "[%2d] | %016" PRIx64 " | %08" PRIx32, i, bytes_to_num(list[i].key, 8), bytes_to_num(list[i].mac, 4));
+            PrintAndLogEx(NORMAL, "[%2d] | %016" PRIx64 " | %08" PRIx64, i, bytes_to_num(list[i].key, 8), bytes_to_num(list[i].mac, 4));
         } else if (i == 10) {
             PrintAndLogEx(SUCCESS, "... skip printing the rest");
         }
@@ -2803,16 +2806,18 @@ int readIclass(bool loop, bool verbose) {
                      FLAG_ICLASS_READER_ONE_TRY;
 
     // loop in client not device - else on windows have a communication error
-    PacketResponseNG resp;
     while (!kbd_enter_pressed()) {
 
         clearCommandBuffer();
         SendCommandMIX(CMD_HF_ICLASS_READER, flags, 0, 0, NULL, 0);
+        PacketResponseNG resp;
+
         if (WaitForResponseTimeout(CMD_ACK, &resp, 4500)) {
+
             uint8_t readStatus = resp.oldarg[0] & 0xff;
             uint8_t *data = resp.data.asBytes;
 
-            if (verbose) PrintAndLogEx(INFO, "Readstatus:%02x", readStatus);
+//            if (verbose) PrintAndLogEx(INFO, "Readstatus:%02x", readStatus);
 
             // no tag found or button pressed
             if ((readStatus == 0 && !loop) || readStatus == 0xFF) {
@@ -2834,18 +2839,29 @@ int readIclass(bool loop, bool verbose) {
                 printIclassDumpInfo(data);
             }
 
+            // if CSN ends with FF12E0, it's inside HID CSN range.
+            bool isHidRange = (memcmp((uint8_t *)(data + 5), "\xFF\x12\xE0", 3) == 0);
+
             if (readStatus & FLAG_ICLASS_READER_AIA) {
                 bool legacy = (memcmp((uint8_t *)(data + 8 * 5), "\xff\xff\xff\xff\xff\xff\xff\xff", 8) == 0);
 
                 bool se_enabled = (memcmp((uint8_t *)(data + 8 * 5), "\xff\xff\xff\x00\x06\xff\xff\xff", 8) == 0);
 
                 PrintAndLogEx(NORMAL, " App IA: %s", sprint_hex(data + 8 * 5, 8));
-                if (legacy)
-                    PrintAndLogEx(SUCCESS, "      : Possible iClass (legacy credential tag)");
-                else if (se_enabled)
-                    PrintAndLogEx(SUCCESS, "      : Possible iClass (SE credential tag)");
-                else
-                    PrintAndLogEx(WARNING, "      : Possible iClass (NOT legacy tag)");
+
+                if (isHidRange) {
+                    if (legacy)
+                        PrintAndLogEx(SUCCESS, "      : Possible iClass - legacy credential tag");
+
+                    if (se_enabled)
+                        PrintAndLogEx(SUCCESS, "      : Possible iClass - SE credential tag");
+                }
+
+                if (isHidRange) {
+                    PrintAndLogEx(SUCCESS, "      : Tag is "_YELLOW_("iClass")", CSN is in HID range");
+                } else {
+                    PrintAndLogEx(SUCCESS, "      : Tag is "_YELLOW_("PicoPass")", CSN is not in HID range");
+                }
             }
 
             if (tagFound && !loop) {

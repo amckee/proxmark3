@@ -1296,7 +1296,7 @@ static int CmdHF14AMfNested(const char *Cmd) {
         }
 
         uint64_t t2 = msclock() - t1;
-        PrintAndLogEx(SUCCESS, "Time to check %d known keys: %.0f seconds\n", ARRAYLEN(g_mifare_default_keys), (float)t2 / 1000.0);
+        PrintAndLogEx(SUCCESS, "Time to check %zu known keys: %.0f seconds\n", ARRAYLEN(g_mifare_default_keys), (float)t2 / 1000.0);
         PrintAndLogEx(SUCCESS, "enter nested attack");
 
         // nested sectors
@@ -1644,7 +1644,7 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
     int block_cnt = MIFARE_1K_MAXBLOCK;
     uint8_t tmp_key[6] = {0};
     bool know_target_key = false;
-    // For the timier
+    // For the timer
     uint64_t t1;
     // Parameters and dictionary file
     char filename[FILE_PATH_SIZE] = {0};
@@ -1666,6 +1666,7 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
     bool verbose = false;
     bool has_filename = false;
     bool errors = false;
+    uint8_t num_found_keys = 0;
 
     // Parse the options given by the user
     while ((ctmp = param_getchar(Cmd, cmdp)) && !errors) {
@@ -1819,6 +1820,9 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
 
             // Store the key for the nested / hardnested attack (if supplied by the user)
             e_sector[blockNo].Key[keyType] = key64;
+            e_sector[blockNo].foundKey[keyType] = 'U';
+
+            ++num_found_keys;
         } else {
             know_target_key = false;
             PrintAndLogEx(FAILED, "Key is wrong. Can't authenticate to sector:"_RED_("%3d") " key type: "_RED_("%c") " key: " _RED_("%s"),
@@ -1855,11 +1859,14 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
                                           sprint_hex(key, sizeof(key))
                                          );
                         }
+                        ++num_found_keys;
                     }
                 }
             }
         }
         if (verbose) PrintAndLogEx(INFO, _YELLOW_("======================= STOP   KNOWN KEY ATTACK ======================="));
+        if (num_found_keys == sectors_cnt * 2)
+            goto all_found;
     }
 
     bool load_success = true;
@@ -1873,7 +1880,6 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
 
             load_success = false;
         }
-
     }
 
     if (has_filename == false || load_success == false) {
@@ -1905,6 +1911,7 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
                         if (mfCheckKeys(FirstBlockOfSector(i), j, true, 1, (keyBlock + (6 * k)), &key64) == PM3_SUCCESS) {
                             e_sector[i].Key[j] = bytes_to_num((keyBlock + (6 * k)), 6);
                             e_sector[i].foundKey[j] = 'D';
+                            ++num_found_keys;
                             break;
                         }
                     }
@@ -1960,7 +1967,7 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
 
                 // Store valid credentials for the nested / hardnested attack if none exist
                 if (know_target_key == false) {
-                    num_to_bytes(e_sector[i].Key[j], 6, key);
+                    num_to_bytes(e_sector[i].Key[j], 6, tmp_key);
                     know_target_key = true;
                     blockNo = i;
                     keyType = j;
@@ -2204,6 +2211,8 @@ tryHardnested: // If the nested attack fails then we try the hardnested attack
             }
         }
     }
+
+all_found:
 
     // Show the results to the user
     PrintAndLogEx(NORMAL, "");
@@ -2607,7 +2616,10 @@ static int CmdHF14AMfChk(const char *Cmd) {
     if (param_getchar(Cmd, 0) == '*') {
         blockNo = 3;
         SectorsCnt = NumOfSectors(param_getchar(Cmd + 1, 0));
-        if (SectorsCnt == 0) return usage_hf14_chk();
+        if (SectorsCnt == 0) {
+            free(keyBlock);
+            return usage_hf14_chk();
+        }
     } else {
         blockNo = param_get8(Cmd, 0);
     }
@@ -2723,8 +2735,13 @@ static int CmdHF14AMfChk(const char *Cmd) {
         PrintAndLogEx(INFO, "No key specified, trying default keys");
         for (; keycnt < ARRAYLEN(g_mifare_default_keys); keycnt++)
             PrintAndLogEx(NORMAL, "[%2d] %02x%02x%02x%02x%02x%02x", keycnt,
-                          (keyBlock + 6 * keycnt)[0], (keyBlock + 6 * keycnt)[1], (keyBlock + 6 * keycnt)[2],
-                          (keyBlock + 6 * keycnt)[3], (keyBlock + 6 * keycnt)[4], (keyBlock + 6 * keycnt)[5], 6);
+                          (keyBlock + 6 * keycnt)[0],
+                          (keyBlock + 6 * keycnt)[1],
+                          (keyBlock + 6 * keycnt)[2],
+                          (keyBlock + 6 * keycnt)[3],
+                          (keyBlock + 6 * keycnt)[4],
+                          (keyBlock + 6 * keycnt)[5]
+                         );
     }
 
     // initialize storage for found keys
@@ -2849,18 +2866,21 @@ out:
         PrintAndLogEx(SUCCESS, "Found keys have been transferred to the emulator memory");
     }
 
-    // Disable fast mode and send a dummy command to make it effective
-    conn.block_after_ACK = false;
-    SendCommandNG(CMD_PING, NULL, 0);
-    WaitForResponseTimeout(CMD_PING, NULL, 1000);
-
     if (createDumpFile) {
         fptr = GenerateFilename("hf-mf-", "-key.bin");
         createMfcKeyDump(SectorsCnt, e_sector, fptr);
     }
-
     free(keyBlock);
     free(e_sector);
+
+    // Disable fast mode and send a dummy command to make it effective
+    conn.block_after_ACK = false;
+    SendCommandNG(CMD_PING, NULL, 0);
+    if (!WaitForResponseTimeout(CMD_PING, NULL, 1000)) {
+        PrintAndLogEx(WARNING, "command execution time out");
+        return PM3_ETIMEOUT;
+    }
+
     PrintAndLogEx(NORMAL, "");
     return PM3_SUCCESS;
 }
@@ -2900,7 +2920,7 @@ void readerAttack(nonces_t data, bool setEmulatorMem, bool verbose) {
     if (k_sector == NULL)
         emptySectorTable();
 
-    success = mfkey32_moebius(data, &key);
+    success = mfkey32_moebius(&data, &key);
     if (success) {
         uint8_t sector = data.sector;
         uint8_t keytype = data.keytype;
@@ -4425,12 +4445,12 @@ static command_t CommandTable[] = {
     {"ecfill",      CmdHF14AMfECFill,       IfPm3Iso14443a,  "Fill simulator memory with help of keys from simulator"},
     {"ekeyprn",     CmdHF14AMfEKeyPrn,      IfPm3Iso14443a,  "Print keys from simulator memory"},
     {"-----------", CmdHelp,                IfPm3Iso14443a,  ""},
-    {"csetuid",     CmdHF14AMfCSetUID,      IfPm3Iso14443a,  "Set UID for magic Chinese card"},
-    {"csetblk",     CmdHF14AMfCSetBlk,      IfPm3Iso14443a,  "Write block - Magic Chinese card"},
-    {"cgetblk",     CmdHF14AMfCGetBlk,      IfPm3Iso14443a,  "Read block - Magic Chinese card"},
-    {"cgetsc",      CmdHF14AMfCGetSc,       IfPm3Iso14443a,  "Read sector - Magic Chinese card"},
-    {"cload",       CmdHF14AMfCLoad,        IfPm3Iso14443a,  "Load dump into magic Chinese card"},
-    {"csave",       CmdHF14AMfCSave,        IfPm3Iso14443a,  "Save dump from magic Chinese card into file or emulator"},
+    {"csetuid",     CmdHF14AMfCSetUID,      IfPm3Iso14443a,  "Set UID     (magic chinese card)"},
+    {"csetblk",     CmdHF14AMfCSetBlk,      IfPm3Iso14443a,  "Write block (magic chinese card)"},
+    {"cgetblk",     CmdHF14AMfCGetBlk,      IfPm3Iso14443a,  "Read block  (magic chinese card)"},
+    {"cgetsc",      CmdHF14AMfCGetSc,       IfPm3Iso14443a,  "Read sector (magic chinese card)"},
+    {"cload",       CmdHF14AMfCLoad,        IfPm3Iso14443a,  "Load dump   (magic chinese card)"},
+    {"csave",       CmdHF14AMfCSave,        IfPm3Iso14443a,  "Save dump from magic chinese card into file or emulator"},
     {"-----------", CmdHelp,                IfPm3Iso14443a,  ""},
     {"mad",         CmdHF14AMfMAD,          IfPm3Iso14443a,  "Checks and prints MAD"},
     {"ndef",        CmdHFMFNDEF,            IfPm3Iso14443a,  "Prints NDEF records from card"},

@@ -69,7 +69,7 @@ static int usage_lf_indala_sim(void) {
 }
 
 // Indala 26 bit decode
-// by marshmellow
+// by marshmellow, martinbeier
 // optional arguments - same as PSKDemod (clock & invert & maxerr)
 static int CmdIndalaDemod(const char *Cmd) {
 
@@ -98,7 +98,7 @@ static int CmdIndalaDemod(const char *Cmd) {
         else if (idx == -4)
             PrintAndLogEx(DEBUG, "DEBUG: Error - Indala: preamble not found");
         else if (idx == -5)
-            PrintAndLogEx(DEBUG, "DEBUG: Error - Indala: size not correct: %d", size);
+            PrintAndLogEx(DEBUG, "DEBUG: Error - Indala: size not correct: %zu", size);
         else
             PrintAndLogEx(DEBUG, "DEBUG: Error - Indala: error demoding psk idx: %d", idx);
         return PM3_ESOFT;
@@ -109,12 +109,15 @@ static int CmdIndalaDemod(const char *Cmd) {
     //convert UID to HEX
     uint32_t uid1 = bytebits_to_byte(DemodBuffer, 32);
     uint32_t uid2 = bytebits_to_byte(DemodBuffer + 32, 32);
-    uint64_t foo = (((uint64_t)uid1 << 32) & 0x1FFFFFFF) | (uid2 & 0x7FFFFFFF);
+    // To be checked, what's this internal ID ?
+    // foo is only used for 64b ids and in that case uid1 must be only preamble, plus the following code is wrong as x<<32 & 0x1FFFFFFF is always zero
+    //uint64_t foo = (((uint64_t)uid1 << 32) & 0x1FFFFFFF) | (uid2 & 0x7FFFFFFF);
+    uint64_t foo = uid2 & 0x7FFFFFFF;
 
     if (DemodBufferLen == 64) {
         PrintAndLogEx(
             SUCCESS
-            , "Indala Found - bitlength %d, Raw %x%08x"
+            , "Indala Found - bitlength %zu, Raw %x%08x"
             , DemodBufferLen
             , uid1
             , uid2
@@ -133,25 +136,43 @@ static int CmdIndalaDemod(const char *Cmd) {
         p1 |= DemodBuffer[32 + 22] << 0;
         p1 |= DemodBuffer[32 + 24] << 9;
 
-        /*
-                uint16_t fc = 0;
-                fc |= DemodBuffer[32+ 1] << 0;
-                fc |= DemodBuffer[32+ 2] << 1;
-                fc |= DemodBuffer[32+ 4] << 2;
-                fc |= DemodBuffer[32+ 5] << 3;
-                fc |= DemodBuffer[32+ 7] << 4;
-                fc |= DemodBuffer[32+10] << 5;
-                fc |= DemodBuffer[32+14] << 6;
-                fc |= DemodBuffer[32+15] << 7;
-                fc |= DemodBuffer[32+17] << 8;
-        */
+        uint8_t fc = 0;
+        fc |= DemodBuffer[57] << 7; // b8
+        fc |= DemodBuffer[49] << 6; // b7
+        fc |= DemodBuffer[44] << 5; // b6
+        fc |= DemodBuffer[47] << 4; // b5
+        fc |= DemodBuffer[48] << 3; // b4
+        fc |= DemodBuffer[53] << 2; // b3
+        fc |= DemodBuffer[39] << 1; // b2
+        fc |= DemodBuffer[58] << 0; // b1
+
+        uint16_t csn = 0;
+        csn |= DemodBuffer[42] << 15; // b16
+        csn |= DemodBuffer[45] << 14; // b15
+        csn |= DemodBuffer[43] << 13; // b14
+        csn |= DemodBuffer[40] << 12; // b13
+        csn |= DemodBuffer[52] << 11; // b12
+        csn |= DemodBuffer[36] << 10; // b11
+        csn |= DemodBuffer[35] << 9; // b10
+        csn |= DemodBuffer[51] << 8; // b9
+        csn |= DemodBuffer[46] << 7; // b8
+        csn |= DemodBuffer[33] << 6; // b7
+        csn |= DemodBuffer[37] << 5; // b6
+        csn |= DemodBuffer[54] << 4; // b5
+        csn |= DemodBuffer[56] << 3; // b4
+        csn |= DemodBuffer[59] << 2; // b3
+        csn |= DemodBuffer[50] << 1; // b2
+        csn |= DemodBuffer[41] << 0; // b1
+
+        uint8_t checksum = 0;
+        checksum |= DemodBuffer[62] << 1; // b2
+        checksum |= DemodBuffer[63] << 0; // b1
 
         PrintAndLogEx(NORMAL, "");
         PrintAndLogEx(SUCCESS, "Possible de-scramble patterns");
         PrintAndLogEx(SUCCESS, "\tPrinted     | __%04d__ [0x%X]", p1, p1);
-        //PrintAndLogEx(SUCCESS, "\tPrinted     | __%04d__ [0x%X]", fc, fc);
         PrintAndLogEx(SUCCESS, "\tInternal ID | %" PRIu64, foo);
-
+        PrintAndLogEx(SUCCESS, "Fmt 26 bit  FC %u , CSN %u , checksum %1d%1d", fc, csn, checksum >> 1 & 0x01, checksum & 0x01);
 
     } else {
         uint32_t uid3 = bytebits_to_byte(DemodBuffer + 64, 32);
@@ -161,7 +182,7 @@ static int CmdIndalaDemod(const char *Cmd) {
         uint32_t uid7 = bytebits_to_byte(DemodBuffer + 192, 32);
         PrintAndLogEx(
             SUCCESS
-            , "Indala Found - bitlength %d, Raw 0x%x%08x%08x%08x%08x%08x%08x"
+            , "Indala Found - bitlength %zu, Raw 0x%x%08x%08x%08x%08x%08x%08x"
             , DemodBufferLen
             , uid1
             , uid2
@@ -237,7 +258,7 @@ static int CmdIndalaDemodAlt(const char *Cmd) {
     }
 
     if (rawbit > 0) {
-        PrintAndLogEx(INFO, "Recovered %d raw bits, expected: %d", rawbit, GraphTraceLen / 32);
+        PrintAndLogEx(INFO, "Recovered %d raw bits, expected: %zu", rawbit, GraphTraceLen / 32);
         PrintAndLogEx(INFO, "worst metric (0=best..7=worst): %d at pos %d", worst, worstPos);
     } else {
         return PM3_ESOFT;
@@ -505,43 +526,7 @@ static int CmdIndalaClone(const char *Cmd) {
 
     print_blocks(blocks, max);
 
-    uint8_t res = 0;
-    PacketResponseNG resp;
-
-    // fast push mode
-    conn.block_after_ACK = true;
-    for (uint8_t i = 0; i < max; i++) {
-        if (i == max - 1) {
-            // Disable fast mode on last packet
-            conn.block_after_ACK = false;
-        }
-        clearCommandBuffer();
-        t55xx_write_block_t ng;
-        ng.data = blocks[i];
-        ng.pwd = 0;
-        ng.blockno = i;
-        ng.flags = 0;
-
-        SendCommandNG(CMD_LF_T55XX_WRITEBL, (uint8_t *)&ng, sizeof(ng));
-        if (!WaitForResponseTimeout(CMD_LF_T55XX_WRITEBL, &resp, T55XX_WRITE_TIMEOUT)) {
-            PrintAndLogEx(ERR, "Error occurred, device did not respond during write operation.");
-            return PM3_ETIMEOUT;
-        }
-
-        if (i == 0) {
-            SetConfigWithBlock0(blocks[0]);
-            if (t55xxAquireAndCompareBlock0(false, 0, blocks[0], false))
-                continue;
-        }
-
-        if (t55xxVerifyWrite(i, 0, false, false, 0, 0xFF, blocks[i]) == false)
-            res++;
-    }
-
-    if (res == 0)
-        PrintAndLogEx(SUCCESS, "Success writing to tag");
-
-    return PM3_SUCCESS;
+    return clone_t55xx_tag(blocks, max);
 }
 
 static command_t CommandTable[] = {
@@ -549,7 +534,7 @@ static command_t CommandTable[] = {
     {"demod",    CmdIndalaDemod,     AlwaysAvailable, "demodulate an indala tag (PSK1) from GraphBuffer"},
     {"altdemod", CmdIndalaDemodAlt,  AlwaysAvailable, "alternative method to Demodulate samples for Indala 64 bit UID (option '224' for 224 bit)"},
     {"read",     CmdIndalaRead,      IfPm3Lf,         "read an Indala Prox tag from the antenna"},
-    {"clone",    CmdIndalaClone,     IfPm3Lf,         "clone Indala to T55x7"},
+    {"clone",    CmdIndalaClone,     IfPm3Lf,         "clone Indala tag to T55x7"},
     {"sim",      CmdIndalaSim,       IfPm3Lf,         "simulate Indala tag"},
     {NULL, NULL, NULL, NULL}
 };
@@ -662,10 +647,8 @@ out:
 
     *size = found_size;
 
-    //PrintAndLogEx(INFO, "DEBUG: detectindala RES = %d | %d | %d", res, found_size, idx);
-
     if (found_size != 224 && found_size != 64) {
-        PrintAndLogEx(INFO, "DEBUG: detectindala | %d", found_size);
+        PrintAndLogEx(INFO, "DEBUG: detectindala | %zu", found_size);
         return -5;
     }
 

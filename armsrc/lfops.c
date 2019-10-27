@@ -290,10 +290,12 @@ void setT55xxConfig(uint8_t arg0, t55xx_configurations_t *c) {
 #ifdef WITH_FLASH
     // shall persist to flashmem
     if (arg0 == 0) {
+        BigBuf_free();
         return;
     }
 
     if (!FlashInit()) {
+        BigBuf_free();
         return;
     }
 
@@ -370,16 +372,19 @@ void loadT55xxConfig(void) {
  */
 void ModThenAcquireRawAdcSamples125k(uint32_t delay_off, uint32_t period_0, uint32_t period_1, uint8_t *command) {
 
-    // start timer
-    StartTicks();
+    FpgaDownloadAndGo(FPGA_BITSTREAM_LF);
 
     // use lf config settings
     sample_config *sc = getSamplingConfig();
 
+
     // Make sure the tag is reset
-    FpgaDownloadAndGo(FPGA_BITSTREAM_LF);
     FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
-    WaitMS(500);
+
+    // start timer
+    StartTicks();
+
+    WaitMS(100);
 
     // clear read buffer
     BigBuf_Clear_keep_EM();
@@ -387,10 +392,10 @@ void ModThenAcquireRawAdcSamples125k(uint32_t delay_off, uint32_t period_0, uint
     LFSetupFPGAForADC(sc->divisor, true);
 
     // little more time for the tag to fully power up
-    WaitMS(200);
+    WaitMS(20);
 
     // if delay_off = 0 then just bitbang 1 = antenna on 0 = off for respective periods.
-    bool bitbang = delay_off == 0;
+    bool bitbang = (delay_off == 0);
     // now modulate the reader field
     if (bitbang) {
         // HACK it appears the loop and if statements take up about 7us so adjust waits accordingly...
@@ -399,6 +404,7 @@ void ModThenAcquireRawAdcSamples125k(uint32_t delay_off, uint32_t period_0, uint
             DbpString("[!] Warning periods cannot be less than 7us in bit bang mode");
             FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
             LED_D_OFF();
+            reply_ng(CMD_LF_MOD_THEN_ACQ_RAW_ADC, PM3_EINVARG, NULL, 0);
             return;
         }
 
@@ -460,6 +466,7 @@ void ModThenAcquireRawAdcSamples125k(uint32_t delay_off, uint32_t period_0, uint
 
     // Turn off antenna
     FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+
     // tell client we are done
     reply_ng(CMD_LF_MOD_THEN_ACQ_RAW_ADC, PM3_SUCCESS, NULL, 0);
 }
@@ -496,7 +503,7 @@ void ReadTItag(void) {
 
     // TI tags charge at 134.2kHz
     FpgaDownloadAndGo(FPGA_BITSTREAM_LF);
-    FpgaSendCommand(FPGA_CMD_SET_DIVISOR, 88); //134.8kHz
+    FpgaSendCommand(FPGA_CMD_SET_DIVISOR, LF_DIVISOR_134); //~134kHz
 
     // Place FPGA in passthrough mode, in this mode the CROSS_LO line
     // connects to SSP_DIN and the SSP_DOUT logic level controls
@@ -723,7 +730,7 @@ void WriteTItag(uint32_t idhi, uint32_t idlo, uint16_t crc) {
     Dbprintf("Writing to tag: %x%08x, crc=%x", idhi, idlo, crc);
 
     // TI tags charge at 134.2kHz
-    FpgaSendCommand(FPGA_CMD_SET_DIVISOR, 88); //134.8kHz
+    FpgaSendCommand(FPGA_CMD_SET_DIVISOR, LF_DIVISOR_134); //~134kHz
     // Place FPGA in passthrough mode, in this mode the CROSS_LO line
     // connects to SSP_DIN and the SSP_DOUT logic level controls
     // whether we're modulating the antenna (high)
@@ -796,9 +803,9 @@ void SimulateTagLowFrequencyEx(int period, int gap, bool ledcontrol, int numcycl
     sample_config *sc = getSamplingConfig();
 
     if ((sc->divisor == 1) || (sc->divisor < 0) || (sc->divisor > 255))
-        FpgaSendCommand(FPGA_CMD_SET_DIVISOR, 88); //134.8kHz
+        FpgaSendCommand(FPGA_CMD_SET_DIVISOR, LF_DIVISOR_134); //~134kHz
     else if (sc->divisor == 0)
-        FpgaSendCommand(FPGA_CMD_SET_DIVISOR, 95); //125kHz
+        FpgaSendCommand(FPGA_CMD_SET_DIVISOR, LF_DIVISOR_125); //125kHz
     else
         FpgaSendCommand(FPGA_CMD_SET_DIVISOR, sc->divisor);
 
@@ -1138,7 +1145,7 @@ void CmdHIDdemodFSK(int findone, uint32_t *high, uint32_t *low, int ledcontrol) 
     uint32_t hi2 = 0, hi = 0, lo = 0;
     int dummyIdx = 0;
     // Configure to go in 125kHz listen mode
-    LFSetupFPGAForADC(95, true);
+    LFSetupFPGAForADC(LF_DIVISOR_125, true);
 
     //clear read buffer
     BigBuf_Clear_keep_EM();
@@ -1228,14 +1235,14 @@ void CmdAWIDdemodFSK(int findone, uint32_t *high, uint32_t *low, int ledcontrol)
 
     uint8_t *dest = BigBuf_get_addr();
 
-    //big enough to catch 2 sequences of largest format
-    size_t size = 12800; //50 * 128 * 2;
+    //big enough to catch 2 sequences of largest format but don't exeed whats available in bigbuff.
+    size_t size = MIN(12800, BigBuf_max_traceLen()); //50 * 128 * 2;
 
     int dummyIdx = 0;
 
     BigBuf_Clear_keep_EM();
 
-    LFSetupFPGAForADC(95, true);
+    LFSetupFPGAForADC(LF_DIVISOR_125, true);
 
     while (!BUTTON_PRESS() && !data_available()) {
 
@@ -1244,6 +1251,10 @@ void CmdAWIDdemodFSK(int findone, uint32_t *high, uint32_t *low, int ledcontrol)
 
         DoAcquisition_default(-1, true);
         // FSK demodulator
+
+        size  = BigBuf_max_traceLen();
+        //askdemod and manchester decode
+        if (size > 12800) size = 12800; //big enough to catch 2 sequences of largest format
 
         int idx = detectAWID(dest, &size, &dummyIdx);
 
@@ -1306,10 +1317,10 @@ void CmdAWIDdemodFSK(int findone, uint32_t *high, uint32_t *low, int ledcontrol)
             *low = rawLo;
             break;
         }
-        WDT_HIT();
     }
+
     FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
-    DbpString("Stopped");
+    DbpString("AWID fsk demod stopped");
     if (ledcontrol) LED_A_OFF();
 }
 
@@ -1323,7 +1334,7 @@ void CmdEM410xdemod(int findone, uint32_t *high, uint64_t *low, int ledcontrol) 
 
     BigBuf_Clear_keep_EM();
 
-    LFSetupFPGAForADC(95, true);
+    LFSetupFPGAForADC(LF_DIVISOR_125, true);
 
     while (!BUTTON_PRESS() && !data_available()) {
 
@@ -1366,12 +1377,12 @@ void CmdEM410xdemod(int findone, uint32_t *high, uint64_t *low, int ledcontrol) 
                 break;
             }
         }
-        WDT_HIT();
         hi = lo = size = idx = 0;
         clk = invert = 0;
     }
+
     FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
-    DbpString("Stopped");
+    DbpString("EM man/ask demod stopped");
     if (ledcontrol) LED_A_OFF();
 }
 
@@ -1389,7 +1400,7 @@ void CmdIOdemodFSK(int findone, uint32_t *high, uint32_t *low, int ledcontrol) {
     BigBuf_Clear_keep_EM();
 
     // Configure to go in 125kHz listen mode
-    LFSetupFPGAForADC(95, true);
+    LFSetupFPGAForADC(LF_DIVISOR_125, true);
 
     while (!BUTTON_PRESS() && !data_available()) {
         WDT_HIT();
@@ -1398,7 +1409,10 @@ void CmdIOdemodFSK(int findone, uint32_t *high, uint32_t *low, int ledcontrol) {
         DoAcquisition_default(-1, true);
 
         //fskdemod and get start index
-        WDT_HIT();
+        size  = BigBuf_max_traceLen();
+        //askdemod and manchester decode
+        if (size > 12000) size = 12000; //big enough to catch 2 sequences of largest format
+
         int idx = detectIOProx(dest, &size, &dummyIdx);
         if (idx < 0) continue;
         //valid tag found
@@ -1455,10 +1469,11 @@ void CmdIOdemodFSK(int findone, uint32_t *high, uint32_t *low, int ledcontrol) {
         code = code2 = 0;
         version = facilitycode = 0;
         number = 0;
-        WDT_HIT();
+        calccrc = 0;
     }
+
     FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
-    DbpString("Stopped");
+    DbpString("IOProx fsk demod stopped");
     if (ledcontrol) LED_A_OFF();
 }
 
@@ -1529,13 +1544,12 @@ void T55xxWriteBit(uint8_t bit, uint8_t downlink_idx) {
 // max_len      - how many bytes can the bit_array hold (ensure no buffer overflow)
 // returns "Next" bit offset / bits stored (for next store)
 uint8_t T55xx_SetBits(uint8_t *bs, uint8_t start_offset, uint32_t data, uint8_t num_bits, uint8_t max_len) {
-    int8_t offset;
     int8_t next_offset = start_offset;
 
     // Check if data will fit.
     if ((start_offset + num_bits) <= (max_len * 8)) {
         // Loop through the data and store
-        for (offset = (num_bits - 1); offset >= 0; offset--) {
+        for (int8_t offset = (num_bits - 1); offset >= 0; offset--) {
 
             if ((data >> offset) & 1)
                 bs[BITSTREAM_BYTE(next_offset)] |= (1 << BITSTREAM_BIT(next_offset));  // Set 1
@@ -1636,7 +1650,7 @@ void T55xx_SendCMD(uint32_t data, uint32_t pwd, uint16_t arg) {
 
     // Send Bits to T55xx
     // Set up FPGA, 125kHz
-    LFSetupFPGAForADC(95, true);
+    LFSetupFPGAForADC(LF_DIVISOR_125, true);
 
     // make sure tag is fully powered up...
     WaitMS(start_wait);
@@ -1683,9 +1697,47 @@ void T55xxResetRead(uint8_t flags) {
     DoPartialAcquisition(0, true, BigBuf_max_traceLen(), 0);
 
     // Turn the field off
-    FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF); // field off
-    reply_mix(CMD_ACK, 0, 0, 0, 0, 0);
+    FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+    reply_ng(CMD_LF_T55XX_RESET_READ, PM3_SUCCESS, NULL, 0);
+    LED_A_OFF();
+}
 
+void T55xxDangerousRawTest(uint8_t *data) {
+    // supports only default downlink mode
+    t55xx_test_block_t *c = (t55xx_test_block_t *)data;
+
+    uint8_t start_wait = 4;
+    uint8_t bs[128 / 8];
+    memset(bs, 0x00, sizeof(bs));
+    uint8_t len = 0;
+    if (c->bitlen == 0 || c->bitlen > 128 || c->time == 0)
+        reply_ng(CMD_LF_T55XX_DANGERRAW, PM3_EINVARG, NULL, 0);
+    for (uint8_t i = 0; i < c->bitlen; i++)
+        len = T55xx_SetBits(bs, len, c->data[i], 1, sizeof(bs));
+
+    if (DBGLEVEL > 1) {
+        Dbprintf("LEN %i, TIMING %i", len, c->time);
+        for (uint8_t i = 0; i < len; i++) {
+            uint8_t sendbits = (bs[BITSTREAM_BYTE(i)] >> BITSTREAM_BIT(i));
+            Dbprintf("%02i: %i", i, sendbits & 1);
+        }
+    }
+
+    LED_A_ON();
+    LFSetupFPGAForADC(LF_DIVISOR_125, true);
+    // make sure tag is fully powered up...
+    WaitMS(start_wait);
+    // Trigger T55x7 in mode.
+    FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+    WaitUS(T55xx_Timing.m[0].start_gap);
+    uint8_t sendbits;
+    for (uint8_t i = 0; i < len; i++) {
+        sendbits = (bs[BITSTREAM_BYTE(i)] >> BITSTREAM_BIT(i));
+        T55xxWriteBit(sendbits & 1, 0);
+    }
+    TurnReadLFOn(c->time);
+    FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+    reply_ng(CMD_LF_T55XX_DANGERRAW, PM3_SUCCESS, NULL, 0);
     LED_A_OFF();
 }
 
@@ -2260,7 +2312,7 @@ void SendForward(uint8_t fwd_bit_count) {
     fwd_bit_sz = fwd_bit_count;
 
     // Set up FPGA, 125kHz or 95 divisor
-    LFSetupFPGAForADC(95, true);
+    LFSetupFPGAForADC(LF_DIVISOR_125, true);
 
     // force 1st mod pulse (start gap must be longer for 4305)
     fwd_bit_sz--; //prepare next bit modulation
@@ -2358,18 +2410,37 @@ void EM4xWriteWord(uint8_t addr, uint32_t data, uint32_t pwd, uint8_t usepwd) {
 }
 
 /*
-Reading a COTAG.
+Reading COTAG.
 
 COTAG needs the reader to send a startsequence and the card has an extreme slow datarate.
 because of this, we can "sample" the data signal but we interpreate it to Manchester direct.
 
-READER START SEQUENCE:
-burst 800 us,    gap   2.2 msecs
-burst 3.6 msecs  gap   2.2 msecs
-burst 800 us     gap   2.2 msecs
-pulse 3.6 msecs
+This behavior looks very similar to old ancient Motorola Flexpass
 
-This triggers a COTAG tag to response
+-----------------------------------------------------------------------
+According to patent EP0040544B1:
+Operating freq
+  reader 132 kHz
+  tag     66 kHz
+
+Divide by 384 counter
+
+PULSE repetition 5.82ms
+LOW  2.91 ms
+HIGH  2.91 ms
+
+Also references to a half-bit format and leading zero.
+-----------------------------------------------------------------------
+
+READER START SEQUENCE:
+
+burst 800 us  gap 2.2 ms
+burst 3.6 ms  gap 2.2 ms
+burst 800 us  gap 2.2 ms
+pulse 3.6 ms
+
+This triggers COTAG tag to response
+
 */
 void Cotag(uint32_t arg0) {
 #ifndef OFF
@@ -2382,7 +2453,7 @@ void Cotag(uint32_t arg0) {
 
     LED_A_ON();
 
-    LFSetupFPGAForADC(89, true);
+    LFSetupFPGAForADC(LF_FREQ2DIV(132), true);
 
     //clear buffer now so it does not interfere with timing later
     BigBuf_Clear_ext(false);

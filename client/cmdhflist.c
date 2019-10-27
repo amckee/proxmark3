@@ -363,7 +363,7 @@ void annotateIclass(char *exp, size_t size, uint8_t *cmd, uint8_t cmdsize) {
             snprintf(exp, size, "UPDATE(%d)", cmd[1]);
             break;
         case ICLASS_CMD_READCHECK:
-            if (ICLASS_CREDIT(c)) {
+            if (ICLASS_CREDIT(cmd[0])) {
                 snprintf(exp, size, "READCHECK[Kc](%d)", cmd[1]);
             } else {
                 snprintf(exp, size, "READCHECK[Kd](%d)", cmd[1]);
@@ -1122,7 +1122,7 @@ bool DecodeMifareData(uint8_t *cmd, uint8_t cmdsize, uint8_t *parity, bool isRes
             AuthData.ks3 = AuthData.at_enc ^ prng_successor(AuthData.nt, 96);
 
             mfLastKey = GetCrypto1ProbableKey(&AuthData);
-            PrintAndLogEx(NORMAL, "            |            |  *  |%49s %012"PRIx64" prng %s |     |",
+            PrintAndLogEx(NORMAL, "            |            |  *  |%48s %012"PRIx64" prng %s |     |",
                           "key",
                           mfLastKey,
                           validate_prng_nonce(AuthData.nt) ? _GREEN_("WEAK") : _YELLOW_("HARD"));
